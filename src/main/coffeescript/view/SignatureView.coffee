@@ -43,7 +43,7 @@ class SignatureView extends Backbone.View
   snippetToTextArea: (e) ->
     if @isParam
       e?.preventDefault()
-      textArea = $('textarea', $(@el.parentNode.parentNode.parentNode))
+      textArea = $('.body-textarea', $(@el).closest('.operation-params'))
       if $.trim(textArea.val()) == ''
         textArea.val(@model.sampleJSON)
 

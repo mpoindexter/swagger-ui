@@ -1,5 +1,5 @@
 // swagger.js
-// version 2.0.37
+// version 2.0.38
 
 var __bind = function(fn, me){
   return function(){
@@ -32,6 +32,53 @@ if (!('filter' in Array.prototype)) {
         other.push(v);
     return other;
   };
+}
+
+if (!('some' in Array.prototype)) {
+  Array.prototype.some = function(fun /*, thisArg */) {
+    'use strict';
+
+    if (this === void 0 || this === null)
+      throw new TypeError();
+
+    var t = Object(this);
+    var len = t.length >>> 0;
+    if (typeof fun !== 'function')
+      throw new TypeError();
+
+    var thisArg = arguments.length >= 2 ? arguments[1] : void 0;
+    for (var i = 0; i < len; i++) {
+      if (i in t && fun.call(thisArg, t[i], i, t))
+        return true;
+    }
+
+    return false;
+  };
+}
+
+if (!('find' in Array.prototype)) {
+  Array.prototype.find = function(predicate) {
+    if (this == null) {
+      throw new TypeError('Array.prototype.find called on null or undefined');
+    }
+    if (typeof predicate !== 'function') {
+      throw new TypeError('predicate must be a function');
+    }
+    var list = Object(this);
+    var length = list.length >>> 0;
+    var thisArg = arguments[1];
+    var value;
+
+    for (var i = 0; i < length; i++) {
+      if (i in list) {
+        value = list[i];
+        if (predicate.call(thisArg, value, i, list)) {
+          return value;
+        }
+      }
+    }
+    return undefined;
+  }
 }
 
 if (!('map' in Array.prototype)) {
@@ -79,7 +126,28 @@ Object.keys = Object.keys || (function () {
   };
 })();
 
+if (typeof Object.create != 'function') {
+  (function() {
+    var F = function() {
+    };
+    Object.create = function(o) {
+      if (arguments.length > 1) {
+        throw Error('Second argument not supported');
+      }
+      if (o === null) {
+        throw Error('Cannot set a null [[Prototype]]');
+      }
+      if (typeof o != 'object') {
+        throw TypeError('Argument must be an object');
+      }
+      F.prototype = o;
+      return new F();
+    };
+  })();
+}
+
 var SwaggerApi = function(url, options) {
+  this.isBuilt = false;
   this.url = null;
   this.debug = false;
   this.basePath = null;
@@ -108,11 +176,15 @@ var SwaggerApi = function(url, options) {
 
   this.failure = options.failure != null ? options.failure : function() {};
   this.progress = options.progress != null ? options.progress : function() {};
-  if (options.success != null)
+  if (options.success != null) {
     this.build();
+    this.isBuilt = true;
+  }
 }
 
 SwaggerApi.prototype.build = function() {
+  if(this.isBuilt)
+    return this;
   var _this = this;
   this.progress('fetching resource list: ' + this.url);
   var obj = {
@@ -418,16 +490,24 @@ SwaggerResource.prototype.addApiDeclaration = function(response) {
 };
 
 SwaggerResource.prototype.addModels = function(models) {
+  var self = this;
   if (models != null) {
-    var modelName;
-    for (modelName in models) {
-      if (this.models[modelName] == null) {
-        var swaggerModel = new SwaggerModel(modelName, models[modelName]);
-        this.modelsArray.push(swaggerModel);
-        this.models[modelName] = swaggerModel;
-        this.rawModels[modelName] = models[modelName];
-      }
-    }
+
+    var model;
+
+    // to array
+    models = Object.keys(models).map(function(modelName) {
+      return models[modelName];
+    });
+
+    models.forEach(function(model) {
+      var modelName = model.id;
+      if (modelName in self.models)
+        return;
+
+      addAncestorModels(model);
+    });
+
     var output = [];
     for (var i = 0; i < this.modelsArray.length; i++) {
       model = this.modelsArray[i];
@@ -435,6 +515,45 @@ SwaggerResource.prototype.addModels = function(models) {
     }
     return output;
   }
+
+  // get the parent model
+  function getParentModel(me) {
+    return models.find(function(model) {
+      if(model.subTypes && model.subTypes.length) {
+        return model.subTypes.some(function(type) {
+          return me.id === type;
+        });
+      }
+      else
+        return false;
+    });
+  }
+
+  // process all all ancestors models
+  function addAncestorModels(me) {
+    var ancestors = [me];
+    var parent = me;
+    while (parent = getParentModel(parent)) {
+      // sorted by the ancestors
+      ancestors.unshift(parent);
+    }
+
+    // ancestor has to go first to get the prototype chain right
+    ancestors.forEach(function(model, index) {
+      self.addModel(model, ancestors[index-1]);
+    });
+  }
+};
+
+SwaggerResource.prototype.addModel = function(model, parentModel) {
+  var modelName = model.id;
+  if (modelName in this.models)
+    return;
+
+  var swaggerModel = new SwaggerModel(modelName, model, parentModel);
+  this.modelsArray.push(swaggerModel);
+  this.models[modelName] = swaggerModel;
+  this.rawModels[modelName] = modelName;
 };
 
 SwaggerResource.prototype.addOperations = function(resource_path, ops, consumes, produces) {
@@ -511,20 +630,39 @@ SwaggerResource.prototype.help = function() {
   return output;
 };
 
-var SwaggerModel = function(modelName, obj) {
+var SwaggerModel = function(modelName, obj, parentModel) {
   this.name = obj.id != null ? obj.id : modelName;
   this.properties = [];
+  this.subTypes = obj.subTypes;
+  var allProps = obj.properties;
+
+  // inherit from parent model, re-create the "properties" object
+  if (parentModel) {
+    allProps = obj.properties = Object.create(parentModel.properties, (function(props) {
+      Object.keys(props).forEach(function(key) {
+        var val = props[key];
+        props[key] = {
+          value: val,
+          writable: true,
+          enumerable: true
+        };
+      });
+      return props;
+    })(obj.properties));
+  }
+
+  var prop;
   var propertyName;
-  for (propertyName in obj.properties) {
+  for (propertyName in allProps) {
     if (obj.required != null) {
       var value;
       for (value in obj.required) {
         if (propertyName === obj.required[value]) {
-          obj.properties[propertyName].required = true;
+          allProps[propertyName].required = true;
         }
       }
     }
-    prop = new SwaggerModelProperty(propertyName, obj.properties[propertyName]);
+    prop = new SwaggerModelProperty(propertyName, allProps[propertyName]);
     this.properties.push(prop);
   }
 }
@@ -540,6 +678,12 @@ SwaggerModel.prototype.setReferencedModels = function(allModels) {
       results.push(property.refModel = allModels[property.refDataType]);
     else
       results.push(void 0);
+  }
+  if (this.subTypes && this.subTypes.length) {
+    this.subTypeModels = [];
+    for (var i = 0; i < this.subTypes.length; i++) {
+      this.subTypeModels.push(allModels[this.subTypes[i]]);
+    }
   }
   return results;
 };
@@ -593,6 +737,7 @@ var SwaggerModelProperty = function(name, obj) {
   this.isCollection = this.dataType && (this.dataType.toLowerCase() === 'array' || this.dataType.toLowerCase() === 'list' || this.dataType.toLowerCase() === 'set');
   this.descr = obj.description;
   this.required = obj.required;
+  this.defaultValue = obj.defaultValue;
   if (obj.items != null) {
     if (obj.items.type != null) {
       this.refDataType = obj.items.type;
@@ -638,7 +783,9 @@ SwaggerModelProperty.prototype.getSampleValue = function(modelsToIgnore) {
 
 SwaggerModelProperty.prototype.toSampleValue = function(value) {
   var result;
-  if (value === "integer") {
+  if ((typeof this.defaultValue !== 'undefined') && this.defaultValue !== null) {
+    result = this.defaultValue;
+  } else if (value === "integer") {
     result = 0;
   } else if (value === "boolean") {
     result = false;
@@ -1218,7 +1365,7 @@ SwaggerRequest.prototype.setHeaders = function(params, operation) {
   // if there's a body, need to set the accepts header via requestContentType
   if (body && (this.type === "POST" || this.type === "PUT" || this.type === "PATCH" || this.type === "DELETE")) {
     if (this.opts.requestContentType)
-      accepts = this.opts.requestContentType;
+      consumes = this.opts.requestContentType;
   } else {
     // if any form params, content type must be set
     if(definedFormParams.length > 0) {
@@ -1227,7 +1374,7 @@ SwaggerRequest.prototype.setHeaders = function(params, operation) {
       else
         consumes = "application/x-www-form-urlencoded";
     }
-    else if (this.type == "DELETE")
+    else if (this.type === "DELETE")
       body = "{}";
     else if (this.type != "DELETE")
       accepts = null;
@@ -1461,10 +1608,35 @@ ShredHttpClient.prototype.execute = function(obj) {
     return out;
   };
 
+  // Transform an error into a usable response-like object
+  var transformError = function(error) {
+    var out = {
+      // Default to a status of 0 - The client will treat this as a generic permissions sort of error
+      status: 0,
+      data: error.message || error
+    };
+
+    if(error.code) {
+      out.obj = error;
+
+      if(error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' ) {
+        // We can tell the client that this should be treated as a missing resource and not as a permissions thing
+        out.status = 404;
+      }
+    }
+
+    return out;
+  };
+
   res = {
     error: function(response) {
       if (obj)
         return cb.error(transform(response));
+    },
+    // Catch the Shred error raised when the request errors as it is made (i.e. No Response is coming)
+    request_error: function(err) {
+      if(obj)
+        return cb.error(transformError(err));
     },
     redirect: function(response) {
       if (obj)
@@ -1533,10 +1705,11 @@ SwaggerAuthorizations.prototype.apply = function(obj, authorizations) {
 /**
  * ApiKeyAuthorization allows a query param or header to be injected
  */
-var ApiKeyAuthorization = function(name, value, type) {
+var ApiKeyAuthorization = function(name, value, type, delimiter) {
   this.name = name;
   this.value = value;
   this.type = type;
+  this.delimiter = delimiter;
 };
 
 ApiKeyAuthorization.prototype.apply = function(obj, authorizations) {
@@ -1547,7 +1720,12 @@ ApiKeyAuthorization.prototype.apply = function(obj, authorizations) {
       obj.url = obj.url + "?" + this.name + "=" + this.value;
     return true;
   } else if (this.type === "header") {
-    obj.headers[this.name] = this.value;
+    if(typeof obj.headers[this.name] !== 'undefined') {
+      if(typeof this.delimiter !== 'undefined')
+        obj.headers[this.name] = obj.headers[this.name] + this.delimiter +  this.value;
+    }
+    else
+      obj.headers[this.name] = this.value;
     return true;
   }
 };

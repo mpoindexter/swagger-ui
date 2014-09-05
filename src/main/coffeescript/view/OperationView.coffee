@@ -57,7 +57,15 @@ class OperationView extends Backbone.View
 
     $(@el).html(Handlebars.templates.operation(@model))
 
-    if @model.responseClassSignature and @model.responseClassSignature != 'string'
+    responseModel = @model.resource.models[@model.type]
+    if responseModel && responseModel.subTypeModels && responseModel.subTypeModels.length
+      multisignatureModel =
+        isParam: false
+        typeModels: responseModel.subTypeModels
+        
+      responseSignatureView = new MultiSignatureView({model: multisignatureModel, tagName: 'div'})
+      $('.model-signature', $(@el)).append responseSignatureView.render().el
+    else if @model.responseClassSignature and @model.responseClassSignature != 'string'
       signatureModel =
         sampleJSON: @model.responseSampleJSON
         isParam: false
@@ -95,7 +103,7 @@ class OperationView extends Backbone.View
   addParameter: (param, consumes) ->
     # Render a parameter
     param.consumes = consumes
-    paramView = new ParameterView({model: param, tagName: 'tr', readOnly: @model.isReadOnly})
+    paramView = new ParameterView({model: param, tagName: 'tr', readOnly: @model.isReadOnly, allModels: @model.resource.models})
     $('.operation-params', $(@el)).append paramView.render().el
 
   addStatusCode: (statusCode) ->
