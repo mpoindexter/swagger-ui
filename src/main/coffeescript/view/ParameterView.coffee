@@ -15,7 +15,7 @@ class ParameterView extends Backbone.View
     template = @template()
     $(@el).html(template(@model))
 
-    paramModel = @options.allModels[@model.type]
+    paramModel = @model.model
     if paramModel && paramModel.subTypeModels && paramModel.subTypeModels.length
       multisignatureModel =
         isParam: true

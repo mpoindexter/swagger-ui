@@ -634,6 +634,7 @@ var SwaggerModel = function(modelName, obj, parentModel) {
   this.name = obj.id != null ? obj.id : modelName;
   this.properties = [];
   this.subTypes = obj.subTypes;
+  this.parentName = parentModel && parentModel.id;
   var allProps = obj.properties;
 
   // inherit from parent model, re-create the "properties" object
@@ -698,7 +699,7 @@ SwaggerModel.prototype.getMockSignature = function(modelsToIgnore) {
   var strong = '<span class="strong">';
   var stronger = '<span class="stronger">';
   var strongClose = '</span>';
-  var classOpen = strong + this.name + ' {' + strongClose;
+  var classOpen = strong + this.name + (this.parentName ? (" : " + this.parentName) : "") + ' {' + strongClose;
   var classClose = strong + '}' + strongClose;
   var returnVal = classOpen + '<div>' + propertiesStr.join(',</div><div>') + '</div>' + classClose;
   if (!modelsToIgnore)
@@ -711,6 +712,16 @@ SwaggerModel.prototype.getMockSignature = function(modelsToIgnore) {
       returnVal = returnVal + ('<br>' + prop.refModel.getMockSignature(modelsToIgnore));
     }
   }
+  
+  if (this.subTypeModels) {
+    for (var i = 0; i < this.subTypeModels.length; i++) {
+      var subTypeModel = this.subTypeModels[i];
+      if (modelsToIgnore.indexOf(subTypeModel.name) === -1) {
+        returnVal = returnVal + ('<br>' + subTypeModel.getMockSignature(modelsToIgnore));
+      }
+    }
+  }
+
   return returnVal;
 };
 
@@ -846,6 +857,7 @@ var SwaggerOperation = function(nickname, path, method, parameters, summary, not
   else {
     this.responseClassSignature = this.getSignature(this.type, this.resource.models);
     this.responseSampleJSON = this.getSampleJSON(this.type, this.resource.models);
+    this.responseModel = this.getModel(this.type, this.resource.models);
   }
 
   for(var i = 0; i < this.parameters.length; i ++) {
@@ -866,6 +878,7 @@ var SwaggerOperation = function(nickname, path, method, parameters, summary, not
     }
     param.signature = this.getSignature(type, this.resource.models);
     param.sampleJSON = this.getSampleJSON(type, this.resource.models);
+    param.model = this.getModel(type, this.resource.models);
 
     var enumValue = param["enum"];
     if(enumValue != null) {
@@ -929,6 +942,21 @@ SwaggerOperation.prototype.isListType = function(type) {
     return type.substring(type.indexOf('[') + 1, type.indexOf(']'));
   } else {
     return void 0;
+  }
+};
+
+SwaggerOperation.prototype.getModel = function(type, models) {
+  var isPrimitive, listType;
+  listType = this.isListType(type);
+  isPrimitive = ((listType != null) && models[listType]) || (models[type] != null) ? false : true;
+  if (isPrimitive) {
+    return null;
+  } else {
+    if (listType != null) {
+      return models[listType];
+    } else {
+      return models[type];
+    }
   }
 };
 

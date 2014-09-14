@@ -1643,7 +1643,7 @@ helpers = this.merge(helpers, Handlebars.helpers); data = data || {};
     };
 
     OperationView.prototype.render = function() {
-      var contentTypeModel, isMethodSubmissionSupported, k, multisignatureModel, o, param, responseContentTypeView, responseModel, responseSignatureView, signatureModel, statusCode, type, v, _i, _j, _k, _l, _len, _len1, _len2, _len3, _ref5, _ref6, _ref7, _ref8;
+      var contentTypeModel, isMethodSubmissionSupported, k, multisignatureModel, o, param, responseContentTypeView, responseSignatureView, signatureModel, statusCode, type, v, _i, _j, _k, _l, _len, _len1, _len2, _len3, _ref5, _ref6, _ref7, _ref8;
       isMethodSubmissionSupported = true;
       if (!isMethodSubmissionSupported) {
         this.model.isReadOnly = true;
@@ -1668,11 +1668,10 @@ helpers = this.merge(helpers, Handlebars.helpers); data = data || {};
         }
       }
       $(this.el).html(Handlebars.templates.operation(this.model));
-      responseModel = this.model.resource.models[this.model.type];
-      if (responseModel && responseModel.subTypeModels && responseModel.subTypeModels.length) {
+      if (this.model.responseModel && this.model.responseModel.subTypeModels && this.model.responseModel.subTypeModels.length) {
         multisignatureModel = {
           isParam: false,
-          typeModels: responseModel.subTypeModels
+          typeModels: this.model.responseModel.subTypeModels
         };
         responseSignatureView = new MultiSignatureView({
           model: multisignatureModel,
@@ -1732,8 +1731,7 @@ helpers = this.merge(helpers, Handlebars.helpers); data = data || {};
       paramView = new ParameterView({
         model: param,
         tagName: 'tr',
-        readOnly: this.model.isReadOnly,
-        allModels: this.model.resource.models
+        readOnly: this.model.isReadOnly
       });
       return $('.operation-params', $(this.el)).append(paramView.render().el);
     };
@@ -2148,7 +2146,7 @@ helpers = this.merge(helpers, Handlebars.helpers); data = data || {};
       }
       template = this.template();
       $(this.el).html(template(this.model));
-      paramModel = this.options.allModels[this.model.type];
+      paramModel = this.model.model;
       if (paramModel && paramModel.subTypeModels && paramModel.subTypeModels.length) {
         multisignatureModel = {
           isParam: true,
